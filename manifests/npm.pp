@@ -10,7 +10,6 @@ define nodejs::npm (
   Array $uninstall_options  = [],
   $home_dir                 = '/root',
   $user                     = undef,
-  Boolean $use_package_json = false,
 ) {
 
   $install_options_string = join($install_options, ' ')
@@ -33,39 +32,26 @@ define nodejs::npm (
     $package_string = "${package}@${ensure}"
   }
 
-  $grep_command = $facts['os']['family'] ? {
+  $grep_command = $::osfamily ? {
     'Windows' => "${cmd_exe_path} /c findstr /l",
     default   => 'grep',
   }
 
-  $dirsep = $facts['os']['family'] ? {
-    'Windows' => "\\",
-    default   => '/'
+  $install_check = $::osfamily ? {
+    'Windows' => "${npm_path} ls --long --parseable | ${grep_command} \"${target}\\node_modules\\${install_check_package_string}\"",
+    default   => "${npm_path} ls --long --parseable | ${grep_command} \"${target}/node_modules/${install_check_package_string}\"",
   }
-
-  $list_command = "${npm_path} ls --long --parseable"
-  $install_check = "${list_command} | ${grep_command} \"${target}${dirsep}node_modules${dirsep}${install_check_package_string}\""
 
   if $ensure == 'absent' {
     $npm_command = 'rm'
     $options = $uninstall_options_string
 
-    if $use_package_json {
-      exec { "npm_${npm_command}_${name}":
-        command => "${npm_path} ${npm_command} * ${options}",
-        onlyif  => $list_command,
-        user    => $user,
-        cwd     => "${target}${dirsep}node_modules",
-        require => Class['nodejs'],
-      }
-    } else {
-      exec { "npm_${npm_command}_${name}":
-        command => "${npm_path} ${npm_command} ${package_string} ${options}",
-        onlyif  => $install_check,
-        user    => $user,
-        cwd     => $target,
-        require => Class['nodejs'],
-      }
+    exec { "npm_${npm_command}_${name}":
+      command => "${npm_path} ${npm_command} ${package_string} ${options}",
+      onlyif  => $install_check,
+      user    => $user,
+      cwd     => $target,
+      require => Class['nodejs'],
     }
   } else {
     $npm_command = 'install'
@@ -74,24 +60,13 @@ define nodejs::npm (
     Nodejs::Npm::Global_config_entry<| title == 'https-proxy' |> -> Exec["npm_install_${name}"]
     Nodejs::Npm::Global_config_entry<| title == 'proxy' |> -> Exec["npm_install_${name}"]
 
-    if $use_package_json {
-      exec { "npm_${npm_command}_${name}":
-        command     => "${npm_path} ${npm_command} ${options}",
-        unless      => $list_command,
-        user        => $user,
-        cwd         => $target,
-        environment => "HOME=${home_dir}",
-        require     => Class['nodejs'],
-      }
-    } else {
-      exec { "npm_${npm_command}_${name}":
-        command     => "${npm_path} ${npm_command} ${package_string} ${options}",
-        unless      => $install_check,
-        user        => $user,
-        cwd         => $target,
-        environment => "HOME=${home_dir}",
-        require     => Class['nodejs'],
-      }
+    exec { "npm_${npm_command}_${name}":
+      command     => "${npm_path} ${npm_command} ${package_string} ${options}",
+      unless      => $install_check,
+      user        => $user,
+      cwd         => $target,
+      environment => "HOME=${home_dir}",
+      require     => Class['nodejs'],
     }
   }
 }
